@@ -1,0 +1,182 @@
+---
+title: "Machine Learning in R: Census Data"
+author: "Timothy Pace"
+date: "2/16/2017"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Preprocessing
+
+```{r}
+#install.packages("AUC")
+#install.packages("caret")
+#install.packages('e1071', dependencies=TRUE)
+library(AUC)
+library(caret)
+
+data <- read.csv("census data.csv")
+```
+
+Makes a new column in the dataset that is a 0,1 response for >50K or <=50k
+
+```{r}
+data$income.g50 <- rep(0, nrow(data))
+data$income.g50[data$income==" >50K"] <- 1
+```
+
+
+## Runs a logistic regression looking at the odds ratios of level of education adjusting for age, sex, and race.
+```{r}
+mod <- glm(income.g50 ~ education + age + sex + race, 
+           data=data[,!colnames(data)%in%"income"], family="binomial")
+summary(mod)
+```
+
+
+## Calculates the odds ratios for high earnings (remember the output of summary() gives log odds ratios) for having a masters degree versus 1st - 4th grade education. Are these statistically significant? What about multiple comparisons?
+
+```{r}
+masters <- exp(2.910088)
+masters
+
+first_fourth <- exp(-0.180178)
+first_fourth
+
+bonferroni <- .05 / 21
+bonferroni
+```
+
+The odds ratio for earning $50,000 a year having and masters degree is 18.35841. These results are statistically significant (p < 0.001). With multiple comparisons, the results are still statistically significant for having a masters degree (p < 0.002380952).
+
+The odds ratio for earning $50,000 a year and having a 1st - 4th grade education is 0.8351215. These results are not statistically significant (p > 0.05). With multiple comparisons, the results are still not statistically significant for having a masters degree (p > 0.002380952).
+
+
+## Examines the effects of age and sex. Again, are they statistically significant? Are they practically significant? Are they fair?
+
+```{r}
+age_exp <- exp(0.043369)
+age_exp
+
+sex <- exp(1.291684)
+sex
+```
+
+Keeping all other predictive variables constant, by increasing age by 1 year, the log odds of earning $50,000 a year increases by 0.043369 (odds ratio = 1.044323). These results are statistically significant, as the probability of seeing a value as or more extreme if the null hypothesis  (i.e., there is no effect of age) is true in the direction of the alternative hypothesis (i.e., age has an effect) is less than 0.001.  The results are practically significant for age, as greater age may be associated with greater experience in the workforce, which may be associated earning more money. These results are not necessarily fair, as it means older individuals are more likely to be paid more based on seniority.
+
+
+
+Keeping all other predictive variables constant, by being a male, the log odds of earning $50,000 a year increase by 1.291684 (odds ratio = 3.638909). These results are statistically significant, as the probability of seeing a value as or more extreme if the null hypothesis (i.e. gender does not have an effect) is true in the direction of the alternative hypothesis (i.e. gender has an effect) is less than 0.001. These results are practically significant, as sexism and pay discrimination is well documented in the US workforce. These results are not fair, as there is no reason why men should earn more than women.
+
+
+## Exploring Relationships II: Plots age by the outcome and the observed predicted probabilities. Why are the predicted probabilities so variable?
+
+```{r}
+x <- data$age
+plot(x, data$income.g50, col="blue", xlab = "Age", 
+     ylab = "Observed Predicted Probabilities",
+     main = "Age vs. Observed Predicted Probabilities")
+fits <- fitted(mod)
+points(x, fits, pch=19, cex=0.3)
+```
+
+
+As age, education, and gender (i.e., being the categorical variable of male) increase, there is a logistic association between earning $50,000 a year or more. The observed predicted probabilities are so variable because there are many (i.e. 21) predictive variables or computations that account for variation in the model. Moreover, in addition to there being so many explanatory predictor variables, there could be high variability in the explanatory predictors as well.
+
+## Explores different cutoffs for the probabilities: Tabulates outcomes with a cutoff of 0.25, 0.5, and 0.75. Which has the lowest percent error?
+```{r}
+tab <- table(data$income.g50, fits>=0.25)
+(tab[1,2]+tab[2,1])/sum(tab)
+
+tab <- table(data$income.g50, fits>=0.5)
+(tab[1,2]+tab[2,1])/sum(tab)
+
+tab <- table(data$income.g50, fits>=0.75)
+(tab[1,2]+tab[2,1])/sum(tab)
+```
+
+The cutoff of 0.5 has the lowest percent error (0.2061).
+
+## Examines this model by plotting the ROC curve and calculating the AUC.
+```{r}
+y <- factor(data$income.g50)
+rr <- roc(fits, y)
+plot(rr, main = "ROC Curve")
+auc(rr)
+```
+The AUC is 0.8021133.
+
+## Evaluating Model 1: How well does it fit?
+
+The area under the curve is is .8021133, which recieved a B (0.8-0.9). It could be better, however, by being greater than 0.9.
+
+## Let'ss formulate another model.
+### Fits a model with all covariates (except income). Do you see the same patterns for level of schooling?
+
+```{r}
+mod <- glm(income.g50~., data=data[,!colnames(data)%in%c("income")], 
+           family="binomial")
+summary(mod)
+```
+
+While the patterns for the level of schooling are somewhat similar to the previous model, the coefficients have changed for most variables to some degree (e.g., the coefficient for masters is 2.49 vs. 2.91, and  1st-4th is 0.0276 vs. -0.180).
+
+## Plots the age by the outcome and the observed predicted probabilities. Do the predicted probabilities have the same pattern as the other model? 
+
+```{r}
+x <- data$age
+plot(x, data$income.g50, col="blue", xlab = "Age", 
+     ylab = "Observed Predicted Probabilities",
+     main = "Age vs. Observed Predicted Probabilities")
+fits <- fitted(mod)
+points(x, fits, pch=19, cex=0.3)
+```
+
+The new predicited probabilities do not have the same pattern as the old model, and there appears to be much more variability in the new model. This is because there are many more predictor variables and calculations that the new model is taking into account versus the old model, which only had 21. Moreover, could be high variability in the numerous explanatory or predictive variables in the new model as well changing the pattern.
+
+## Calculates the percent error as before for cutoffs 0.25, 0.5, 0.75. Which cutoff has the lowest percent error? Does this model perform better than the other model?
+
+```{r}
+tab <- table(data$income.g50, fits>=0.25)
+(tab[1,2]+tab[2,1])/sum(tab) #0.25
+
+tab <- table(data$income.g50, fits>=0.5)
+(tab[1,2]+tab[2,1])/sum(tab) #0.5
+
+tab <- table(data$income.g50, fits>=0.75)
+(tab[1,2]+tab[2,1])/sum(tab) #0.75
+```
+The cutoff of 0.5 has the lowest percent error (0.1659). This model therefore performs better than the other model, with the lowest standard error (0.1659 vs. 0.2061).
+
+## Model 2 Evaluation:  Plots the ROC and calculate the AUC. Again, does this model out perform the other model?
+```{r}
+y <- factor(data$income.g50)
+rr <- roc(fits, y)
+plot(rr, main = "ROC Curve")
+auc(rr)
+```
+
+The AUC for this model is 0.8893198. Therefore, this model outperforms the other model with a higher AUC (0.8893198 vs 0.8021133).
+
+## Runs 10-fold cross validation on the model to determine the mean AUROC.
+
+```{r}
+control <- trainControl(method="cv", number=10, classProbs=TRUE, savePredictions = TRUE, summaryFunction=twoClassSummary)
+
+data$income.g50_fact <- rep(NA, length(data$income.g50))
+data$income.g50_fact[data$income.g50 == 0] <- "IncomeLess50k"
+data$income.g50_fact[data$income.g50 >= 1] <- "IncomeGreater50k"
+verbose = FALSE
+
+data$income.g50 <- NULL
+data$income <- NULL
+
+fit <- train(income.g50_fact ~ ., data = data, 
+             method="glm", family = "binomial", metric="ROC", trControl=control)
+# display results
+print(fit)
+```
+
